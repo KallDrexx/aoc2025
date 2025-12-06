@@ -51,9 +51,14 @@ async Task<Range[]> ReadRanges(StreamReader reader)
 
         var first = ulong.Parse(span[..dashIndex]);
         var second = ulong.Parse(span[(dashIndex + 1)..]);
-        // InsertRange(new Range(first, second), ranges);
+        if (first > second)
+        {
+            throw new InvalidOperationException("wrong order");
+        }
+
+        InsertRange(new Range(first, second), ranges);
         
-        ranges.Add(new Range(first, second));
+        // ranges.Add(new Range(first, second));
     }
 
     return ranges.ToArray();
@@ -79,7 +84,13 @@ void InsertRange(Range toInsert, List<Range> ranges)
         {
             // The range to insert fully inside the current range, nothing to do
         }
-        else  if (toInsert.First < current.First)
+        else if (toInsert.First < current.First && toInsert.Last >= current.Last)
+        {
+            // toInsert fully encloses current
+            ranges.RemoveAt(x);
+            InsertRange(toInsert, ranges);
+        }
+        else if (toInsert.First < current.First)
         {
             // Does this range need to be extended on the first side?
             ranges.RemoveAt(x);
@@ -113,49 +124,4 @@ async IAsyncEnumerable<ulong> ReadTestValues(StreamReader reader)
     }
 }
 
-bool RangeContainsValue(ulong value, Span<Range> rangeSpan)
-{
-    foreach (var range in rangeSpan)
-    {
-        if (value >= range.First && value <= range.Last)
-        {
-            return true;
-        }
-    }
-
-    return false;
-
-    // while (true)
-    // {
-    //     if (rangeSpan.IsEmpty)
-    //     {
-    //         return false;
-    //     }
-    //
-    //     if (rangeSpan.Length == 1)
-    //     {
-    //         return rangeSpan[0].Contains(value);
-    //     }
-    //
-    //     var halfIndex = rangeSpan.Length / 2;
-    //     var splitRange = rangeSpan[halfIndex];
-    //     if (splitRange.Contains(value))
-    //     {
-    //         return true;
-    //     }
-    //
-    //     var slice = splitRange.First > value
-    //         ? rangeSpan[..halfIndex]
-    //         : rangeSpan[(halfIndex + 1)..];
-    //
-    //     rangeSpan = slice;
-    // }
-}
-
-public record struct Range(ulong First, ulong Last)
-{
-    public bool Contains(ulong value)
-    {
-        return value <= Last && value >= First;
-    }
-}
+public record struct Range(ulong First, ulong Last);
