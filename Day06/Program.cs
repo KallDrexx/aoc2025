@@ -1,41 +1,66 @@
 ﻿// const string inputFile = "test-input.txt";
 const string inputFile = "real-input.txt";
 
-var (grid, operators) = await GetGrid(inputFile);
+var input = await GetInput(inputFile);
 ulong overallTotal = 0;
 
-for (var col = 0; col < grid[0].Length; col++)
+foreach (var column in input.Columns)
 {
-    ulong colTotal = 0;
-    var op = operators[col];
+    ulong columnTotal = 0;
 
-    for (var row = 0; row < grid.Length; row++)
+    for (var innerCol = 0; innerCol < column.LongestLength; innerCol++)
     {
-        var number = grid[row][col];
-        if (colTotal == 0)
+        ulong number = 0;
+        foreach (var line in input.Lines)
         {
-            colTotal = number;
+            var slice = column.Length != null
+                ? line.AsSpan().Slice(column.StartIndex, column.Length.Value)
+                : line.AsSpan()[column.StartIndex..];
+
+            if (innerCol < slice.Length)
+            {
+                if (ulong.TryParse(slice[innerCol].ToString(), out var digit))
+                {
+                    number = number * 10 + digit;
+                }
+            }
+        }
+
+        if (number == 0)
+        {
+            // No values, ignore)
+            continue;
+        }
+
+        if (column.Operator == Operator.Add)
+        {
+            Console.Write("+ ");
+            columnTotal += number;
         }
         else
         {
-            colTotal = op == Operator.Add ? colTotal + number : colTotal * number;
+            Console.Write("* ");
+            columnTotal = columnTotal == 0 ? number : columnTotal * number;
         }
+
+        Console.Write($"{number} ");
     }
 
-    overallTotal += colTotal;
+    Console.WriteLine($" = {columnTotal}");
+    overallTotal += columnTotal;
 }
 
 Console.WriteLine(overallTotal);
 
 return;
 
-async Task<(ulong[][] Values, Operator[])> GetGrid(string filename)
+async Task<Input> GetInput(string filename)
 {
     await using var stream = File.OpenRead(filename);
     using var reader = new StreamReader(stream);
 
-    var grid = new List<ulong[]>();
-    var operators = new List<Operator>();
+    var lines = new List<string>();
+    var longestLineLength = 0;
     while (true)
     {
         var line = await reader.ReadLineAsync();
@@ -44,67 +69,53 @@ async Task<(ulong[][] Values, Operator[])> GetGrid(string filename)
             break;
         }
 
-        var entry = new List<ulong>();
-        var span = line.AsSpan();
-        bool? isOperator = null;
-        foreach (var part in span.Split(' '))
+        lines.Add(line);
+        if (line.Length > longestLineLength)
         {
-            var spanPart = span[part].Trim();
-            if (spanPart.IsEmpty || spanPart.IsWhiteSpace())
-            {
-                continue;
-            }
-
-            if (isOperator == null)
-            {
-                if (operators.Count > 0)
-                {
-                    throw new InvalidOperationException("Unexpected second line of operators");
-                }
-
-                if (spanPart[0] == '*' || spanPart[0] == '+')
-                {
-                    isOperator = true;
-                }
-                else if (char.IsDigit(spanPart[0]))
-                {
-                    isOperator = false;
-                }
-                else
-                {
-                    throw new InvalidOperationException("Not an operator or digit");
-                }
-            }
-
-            if (isOperator == true)
-            {
-                var op = spanPart[0] == '*' ? Operator.Multiply : Operator.Add;
-                operators.Add(op);
-            }
-            else
-            {
-                entry.Add(ulong.Parse(span[part]));
-            }
-        }
-
-        if (entry.Count > 0)
-        {
-            if (grid.Count > 0 && grid[0].Length != entry.Count)
-            {
-                throw new InvalidOperationException("Mismatch in grid size");
-            }
-
-            grid.Add(entry.ToArray());
+            longestLineLength = line.Length;
         }
     }
 
-    if (operators.Count != grid[0].Length)
+    var lastLine = lines[^1];
+    lines.RemoveAt(lines.Count - 1);
+
+    // Assume operator always designates first column
+    var data = lastLine
+        .Select((character, index) => new { Character = character, Index = index })
+        .Where(x => !char.IsWhiteSpace(x.Character))
+        .ToArray();
+
+    var columns = new List<Column>();
+    for (var x = 0; x < data.Length; x++)
     {
-        throw new InvalidOperationException("Grid / operator count mismatch");
+        var op = data[x].Character switch
+        {
+            '+' => Operator.Add,
+            '*' => Operator.Multiply,
+            _ => throw new InvalidOperationException("Invalid operator"),
+        };
+
+        int? length;
+        int longestColumnLength;
+        if (x < data.Length - 1)
+        {
+            length = data[x + 1].Index - data[x].Index;
+            longestColumnLength = length.Value;
+        }
+        else
+        {
+            length = null;
+            longestColumnLength = longestLineLength - data[x].Index;
+        }
+
+        columns.Add(new Column(op, data[x].Index, length, longestColumnLength));
     }
 
-    return (grid.ToArray(), operators.ToArray());
+    return new Input(lines, columns);
 }
 
+public record Column(Operator Operator, int StartIndex, int? Length, int LongestLength);
 
-enum Operator { Add, Multiply }
+public record Input(IReadOnlyList<string> Lines, IReadOnlyList<Column> Columns);
+
+public enum Operator { Add, Multiply }
